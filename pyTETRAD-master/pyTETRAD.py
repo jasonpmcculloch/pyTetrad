@@ -1,4 +1,4 @@
-#Last Edited: 7/15/2015
+#Last Edited: 7/20/2015
 
 import numpy as np
 import re
@@ -363,7 +363,10 @@ class TetradGrid(TetradFile):
             z_centers = np.tile(z_centers.reshape(nz,1),nx*ny)
             z_centers = np.reshape(z_centers, nx*ny*nz)
             
-            return (x_centers, y_centers, z_centers)
+            grid_df = pd.DataFrame(np.array((x_centers, y_centers, z_centers)).T, columns = ["X", "Y", "Z"])
+            grid_df.loc[:,"Block"] = pd.Series(range(1,nx*ny*nz+1))
+
+            return grid_df
                        
                 
         def block_centers(self, dx):
@@ -374,8 +377,5 @@ class TetradGrid(TetradFile):
             centers = [(nodes[i+1]+nodes[i])/2 for i in xrange(n)]
             return np.array(centers)
                 
-
-
-            
-            
+          
             
