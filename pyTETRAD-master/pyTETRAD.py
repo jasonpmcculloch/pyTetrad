@@ -1,4 +1,4 @@
-#Last Edited: 7/20/2015
+#Last Edited: 7/24/2015
 
 import numpy as np
 import re
@@ -177,6 +177,19 @@ class TetradOut(TetradFile):
 
     def first(self):
         self.index = 0
+        self.seek(self._pos[self.index])
+        self.read_time()
+        
+    def next(self):
+        if self.index == len(self._pos)-1:
+            print "EOF reached, no more results next to current time."
+        else:
+            self.index += 1
+            self.seek(self._pos[self.index])
+            self.read_time()
+
+    def last(self):
+        self.index = len(self._pos)-1
         self.seek(self._pos[self.index])
         self.read_time()
 
