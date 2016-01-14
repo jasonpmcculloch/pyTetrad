@@ -1,4 +1,4 @@
-#Last Edited: 7/24/2015
+#Last Edited: 1/14/2016
 
 import numpy as np
 import re
@@ -302,93 +302,133 @@ class TetradInterSim(TetradFile):
         return df
         
 class TetradGrid(TetradFile):
-        def __init__(self, filename):
-            self.filename = filename
-            super(TetradGrid,self).__init__(filename,'r')
-            self.check_filetype()
-            
-        def check_filetype(self):
-            """Checks filetype and defines read_table method using getattr and setattr"""
-            self.seek(0)
-            filetype = self.readline().split()[0]
-            if filetype == "INTERSIM":
-                setattr(self,'read_table',getattr(self, "read_table_intersim"))
-            elif filetype == "GRIDVIEW":
-                setattr(self,'read_table',getattr(self, "read_table_gridview"))
-            else:
-                print "Cannot recognize filetype"
-            self.filetype = filetype
+    def __init__(self, filename):
+        self.filename = filename
+        super(TetradGrid,self).__init__(filename,'r')
+        self.check_filetype()
         
-        def read_table_intersim(self):
-            line = "  "
-            values = []
-            while line.startswith("  ") and not line[0].isalpha():
-                line = self.readline()
-                if not line[0].isalpha():
-                    values+=(line.strip().split())
-            return (np.array(values).astype(float))
-        
-        def read_table_gridview(self):
-            line = "  "
-            values = []
-            while line.startswith("  ") and not line.startswith("         0.0") and not line.startswith("        -1.0"):
-                line = self.readline()
+    def check_filetype(self):
+        """Checks filetype and defines read_table method using getattr and setattr"""
+        self.seek(0)
+        filetype = self.readline().split()[0]
+        if filetype == "INTERSIM":
+            setattr(self,'read_table',getattr(self, "read_table_intersim"))
+        elif filetype == "GRIDVIEW":
+            setattr(self,'read_table',getattr(self, "read_table_gridview"))
+        else:
+            print "Cannot recognize filetype"
+        self.filetype = filetype
+    
+    def read_table_intersim(self):
+        line = "  "
+        values = []
+        while line.startswith("  ") and not line[0].isalpha():
+            line = self.readline()
+            if not line[0].isalpha():
                 values+=(line.strip().split())
-            return (np.array(values[:-1]).astype(float))
-            
-        def grid_spec(self):
-            
-            self.seek(0)
+        return (np.array(values).astype(float))
+    
+    def read_table_gridview(self):
+        line = "  "
+        values = []
+        while line.startswith("  ") and not line.startswith("         0.0") and not line.startswith("        -1.0"):
+            line = self.readline()
+            values+=(line.strip().split())
+        return (np.array(values[:-1]).astype(float))
+        
+    def grid_spec(self):
+        """Get the block centers (x, y, z) of each block in a TETRAD grid.
+        
+        Returns:
+            grid_df -- a dataframe containing the block centers (x, y, z) 
+                       of each block
+            grid_dim -- a dictionary containing lists of the grid dimensions dx, dy and dz
+        """
+        
+        self.seek(0)
+        self.readline()
+        
+        if self.filetype=="INTERSIM":
             self.readline()
+            nx = np.array(self.readline(), dtype=int)
+            ny = np.array(self.readline(), dtype=int)
+            nz = np.array(self.readline(), dtype=int)
             
-            if self.filetype=="INTERSIM":
-                self.readline()
-                nx = np.array(self.readline(), dtype=int)
-                ny = np.array(self.readline(), dtype=int)
-                nz = np.array(self.readline(), dtype=int)
-                
-            elif self.filetype=="GRIDVIEW":
-                nx, ny, nz = np.array(self.readline().strip().split(), dtype=int)
-                
-            self.seek(0)
-            self.skipto(["DX","Dx"])
-            dx = self.read_table()
-            if self.filetype=="INTERSIM":
-                dx = dx[:nx]
-            x_centers = self.block_centers(dx)
-            x_centers = np.tile(x_centers, ny*nz)
+        elif self.filetype=="GRIDVIEW":
+            nx, ny, nz = np.array(self.readline().strip().split(), dtype=int)
             
-            self.seek(0)
-            self.skipto(["DY","Dy"])
-            dy = self.read_table()
-            if self.filetype=="INTERSIM":
-                dy = dy.reshape(ny,nx).T[0]
-            y_centers = self.block_centers(dy)
-            y_centers = np.tile(y_centers.reshape(ny,1),nx)
-            y_centers = np.reshape(y_centers, nx*ny)
-            y_centers = np.tile(y_centers, nz)
+        self.seek(0)
+        self.skipto(["DX","Dx"])
+        dx = self.read_table()
+        if self.filetype=="INTERSIM":
+            dx = dx[:nx]
+        x_centers = self.block_centers(dx)
+        x_centers = np.tile(x_centers, ny*nz)
+        
+        self.seek(0)
+        self.skipto(["DY","Dy"])
+        dy = self.read_table()
+        if self.filetype=="INTERSIM":
+            dy = dy.reshape(ny,nx).T[0]
+        y_centers = self.block_centers(dy)
+        y_centers = np.tile(y_centers.reshape(ny,1),nx)
+        y_centers = np.reshape(y_centers, nx*ny)
+        y_centers = np.tile(y_centers, nz)
+        
+        self.seek(0)
+        self.skipto(["Thickness", "DZ", "Dz"])
+        dz = self.read_table()
+        dz = dz.reshape(nz, nx*ny).T[0]
+        z_centers = self.block_centers(dz)
+        z_centers = np.tile(z_centers.reshape(nz,1),nx*ny)
+        z_centers = np.reshape(z_centers, nx*ny*nz)
+        
+        grid_df = pd.DataFrame(np.array((x_centers, y_centers, z_centers)).T, columns = ["X", "Y", "Z"])
+        grid_df.loc[:,"Block"] = pd.Series(range(1,nx*ny*nz+1))
+        
+        grid_dim = {'dx':dx, 'dy':dy, 'dz':dz}     
+        
+        return grid_df, grid_dim
+                   
+    def connect_refined_area(self, ref_grid, x_ref_index, y_ref_index, z_ref_index):
+        """Connect a refined area grid dataframe to the main grid dataframe.
+        
+        Input argument(s):
+            ref_grid -- the refined grid TetradGrid object.
+            ref_index -- a tuple (ix, iy, iz) that indicates the start indices of
+                         refinement
+        
+        Returns:
+            grid_combined -- a combined grid and ref_grid dataframe with corrected
+                             block centers
+    
+        """
+        grid_df, grid_dim = self.grid_spec()
+        ref_grid_df, ref_grid_dim = ref_grid.grid_spec()
+        
+        x_offset = sum(grid_dim['dx'][:x_ref_index - 1])
+        y_offset = sum(grid_dim['dy'][:y_ref_index - 1])
+        z_offset = sum(grid_dim['dz'][:z_ref_index - 1])
+        block_offset = grid_df.shape[0] * 2 #get the fracture blocks only
+        
+        ref_grid_df.loc[:,'X'] += x_offset
+        ref_grid_df.loc[:,'Y'] += y_offset
+        ref_grid_df.loc[:,'Z'] += z_offset
+        ref_grid_df.loc[:,'Block'] += block_offset
+        
+        grid_combined = grid_df.append(ref_grid_df)
+        
+        return grid_combined
+        
+    
+    def block_centers(self, dx):
+        n=len(dx)
+        nodes = [0]
+        for x in dx:
+            nodes.append(x+nodes[-1])
+        centers = [(nodes[i+1]+nodes[i])/2 for i in xrange(n)]
+        return np.array(centers)
             
-            self.seek(0)
-            self.skipto(["Thickness", "DZ", "Dz"])
-            dz = self.read_table()
-            dz = dz.reshape(nz, nx*ny).T[0]
-            z_centers = self.block_centers(dz)
-            z_centers = np.tile(z_centers.reshape(nz,1),nx*ny)
-            z_centers = np.reshape(z_centers, nx*ny*nz)
-            
-            grid_df = pd.DataFrame(np.array((x_centers, y_centers, z_centers)).T, columns = ["X", "Y", "Z"])
-            grid_df.loc[:,"Block"] = pd.Series(range(1,nx*ny*nz+1))
 
-            return grid_df
-                       
-                
-        def block_centers(self, dx):
-            n=len(dx)
-            nodes = [0]
-            for x in dx:
-                nodes.append(x+nodes[-1])
-            centers = [(nodes[i+1]+nodes[i])/2 for i in xrange(n)]
-            return np.array(centers)
-                
           
             
