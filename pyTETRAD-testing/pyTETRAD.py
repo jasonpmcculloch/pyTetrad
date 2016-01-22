@@ -32,7 +32,7 @@ class TetradFile(file):
         line=''
         if isinstance(keyword,list): keywords=keyword
         else: keywords=[keyword]
-        while not any([line[start:].strip()==kw in keywords]):
+        while not any([line[start:].strip()==kw for kw in keywords]):
             line=self.readline()
             if line=='': return False
         return [kw for kw in keywords if line[start:].strip()==kw][0]
