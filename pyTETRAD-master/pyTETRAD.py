@@ -1,4 +1,4 @@
-#Last Edited: 1/14/2016
+#Last Edited: 1/22/2016
 
 import numpy as np
 import re
@@ -32,10 +32,10 @@ class TetradFile(file):
         line=''
         if isinstance(keyword,list): keywords=keyword
         else: keywords=[keyword]
-        while not any([line[start:].startswith(kw) for kw in keywords]):
+        while not any([line[start:].strip()==kw in keywords]):
             line=self.readline()
             if line=='': return False
-        return [kw for kw in keywords if line[start:].startswith(kw)][0]
+        return [kw for kw in keywords if line[start:].strip()==kw][0]
 
 class TetradGridView(TetradFile):
     def __init__(self, filename):
@@ -50,7 +50,7 @@ class TetradGridView(TetradFile):
         self.seek(0)
         # set up pos,times
         t=[]
-        exclude=["Dx", "Dy", "Top"] #exclude Top, Dx and Dy in keywords
+        exclude=["Dx", "Dy", "Top", "Dz", 'ActivBlks', 'Aquifer'] #exclude Top, Dx, Dy, Dz, 'ActivBlks', 'Aquifer'  in keywords
         keywords=[i for i in self.find_parameters() if i.lower() not in map(lambda x:x.lower(), exclude)]
         self._fullpos = {p.strip():[] for p in keywords}
         endfile=False
@@ -96,18 +96,30 @@ class TetradGridView(TetradFile):
             values+=(line.strip().split())
         return (np.array(values[:-1]).astype(float))
 
-    def read_all_data(self):
-
-        df = pd.DataFrame({'time':self.times})
-        for i, pos in enumerate(self._pos):
-            self.seek(pos)
-            self.read_time()
-            t = self.time
-            par = self.read_parameter()
-            values = self.read_table()
-            values_df = pd.DataFrame({par: values, 'time': [t]*len(values)})
-            self.param_table = df.merge(values_df, how = 'outer', on = 'time')
-            df = self.param_table
+    def read_all_data(self, filename = ""):
+        """Read all the data vs time for each parameter in the GridView object.
+        Writes a new GridVew object property called param_table
+        
+        Parameters:
+            filename -- an filename (without the extension) to write the DataFrame on. 
+        
+        Object Property:
+            self.param_table -- a dictionary with parameters as keys; containing DataFrames of data
+        """
+        self.param_table = {}
+        for par in self._fullpos:
+            df = pd.DataFrame()
+            for pos in self._fullpos[par]:
+                self.seek(pos)
+                self.read_time()
+                t = self.time
+                values = self.read_table()
+                df[t]=values
+            self.param_table[par] = df
+            
+        if filename:
+            for par in self.param_table:
+                self.param_table[par].to_csv(filename + "_" + par + ".csv", index = False)
 
     def read_data(self):
         orig_pos = self.tell()

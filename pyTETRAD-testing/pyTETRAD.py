@@ -1,4 +1,4 @@
-#Last Edited: 1/15/2016
+#Last Edited: 1/22/2016
 
 import numpy as np
 import re
