@@ -91,7 +91,7 @@ class TetradGridView(TetradFile):
     def read_table(self):
         line = "  "
         values = []
-        while line.startswith("  ") and not line.startswith("         0.0") and not line.startswith("        -1.0"):
+        while (line.startswith("  ") or line.startswith(" -")) and not line.startswith("         0.0") and not line.startswith("        -1.0"):
             line = self.readline()
             values+=(line.strip().split())
         return (np.array(values[:-1]).astype(float))

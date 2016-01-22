@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Spyder Editor
-
-This is a temporary script file.
+JYTA
+Last Edit: 1/22/2016
 """
 
 from pyTETRAD import *
@@ -64,15 +63,15 @@ def DoVTKLegacy(x, y, z, data, fn, time = None):
 
 
 # TETRAD Grid
-grid = TetradGrid("T2-R22.GV")
+grid = TetradGrid("base.gv")
 centers, dim = grid.grid_spec()
-data = pd.read_csv('Grid.csv')
 
 #TETRAD GridView Data
 def ProcessGridView():
-    gv = TetradGridView("T2-R22.GV")
-    gv.read_all_data('T2-R22_results')
+    gv = TetradGridView("base.gv")
+    gv.read_all_data('base_results')
 
+ProcessGridView()
 # Dimensions 
 
 nx, ny, nz = dim['dx'].shape[0], dim['dy'].shape[0], dim['dz'].shape[0] 
@@ -84,43 +83,60 @@ npoints = (nx + 1) * (ny + 1) * (nz + 1)
 # Coordinates 
 x = np.cumsum(dim['dx'])
 x = np.insert(x,0,0)
-y = np.cumsum(dim['dy'])
+y = np.cumsum(dim['dy'][::-1])   #inverted y axis in paraview vs tetrad
 y = np.insert(y,0,0)
 z = np.cumsum(dim['dz'])
 z = np.insert(z,0,0)
 z = z*-1
 
-# Variables 
 
+def ConvertDataTo3D(data_1d):
+    data_3d = np.zeros((nx, ny, nz)) 
+    
+    for k in range(nz):
+        for j in range(ny): 
+            for i in range(nx):  
+                index = i + nx*j + (nx*ny)*k
+                data_3d[i,-j-1,k] = data_1d[index]
+                
+    return data_3d
+    
+# Variables 
 #pressure = np.zeros((nx, ny, nz)) 
 #temperature = np.zeros((nx, ny, nz)) 
 block_3d = (np.zeros((nx, ny, nz)))
 
 #df = data.loc[:,'TFR']
 #data_array = np.array(df.tolist())
-block_1d = np.array(data.loc[:,'Block'].tolist())
-
-for k in range(nz):
-    for j in range(ny): 
-        for i in range(nx): 
-            index = i + nx*j + (nx*ny)*k
-#            print i,j,k,index
-#            temperature[i,-j,k] = data_array[index]
-            block_3d[i,-j,k] = block_1d[index]
+block_1d = np.array(centers.loc[:,'Block'].tolist())
+block_3d = ConvertDataTo3D(block_1d)
 
         
 #DoVTKLegacy(x, y, z, {'T': temperature, 'Block': block})
 
-results_files = ["T2-R22_results_PFR.csv", "T2-R22_results_SGFR.csv", 'T2-R22_results_TFR.csv']
-param_names = ['PFR', 'SGFR', 'TFR']
+results_files = ["base_results_P.csv", "base_results_Sg.csv", 'base_results_T.csv']
+param_names = ['P', 'SG', 'T']
+isfile = 'base.is'
+is_time, is_index = (0,0)
 
 def TetradResultsToVTK(results_files, param_names, vtk_file_name, x, y, z, block_3d, skip = 1):
     
     data_dict = {'Block':block_3d}
-    
     df = pd.read_csv(results_files[0])
     times = df.columns.tolist()[:-1][::skip]
     
+    if isfile:
+        isfo = TetradInterSim(isfile)
+        is_df = isfo.read_data()
+        is_params = is_df.columns.tolist()
+        if 'Sg' in is_params:
+            is_params[is_params.index('Sg')] = 'SG'
+            is_df.columns = is_params
+        for is_param in is_params:
+            data_1d = np.array(is_df[is_param].tolist())
+            data_dict[is_param] = ConvertDataTo3D(data_1d)
+            
+#        DoVTKLegacy(x, y, z, data_dict, vtk_file_name + '.vtk.' + is_index, time=time)
         
     
     for step, time in enumerate(times):
@@ -135,15 +151,6 @@ def TetradResultsToVTK(results_files, param_names, vtk_file_name, x, y, z, block
         DoVTKLegacy(x, y, z, data_dict, vtk_file_name + '.vtk.' + str(step), time=time)
         
         
-def ConvertDataTo3D(data_1d):
-    data_3d = np.zeros((nx, ny, nz)) 
-    
-    for k in range(nz):
-        for j in range(ny): 
-            for i in range(nx):  
-                index = i + nx*j + (nx*ny)*k
-                data_3d[i,-j,k] = data_1d[index]
+
                 
-    return data_3d
-                
-TetradResultsToVTK(results_files, param_names, 'T2-R22_results', x, y, z, block_3d, 30)
+TetradResultsToVTK(results_files, param_names, 'base_results', x, y, z, block_3d)
