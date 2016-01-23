@@ -150,7 +150,4 @@ def TetradResultsToVTK(results_files, param_names, vtk_file_name, x, y, z, block
             
         DoVTKLegacy(x, y, z, data_dict, vtk_file_name + '.vtk.' + str(step), time=time)
         
-        
-
-                
 TetradResultsToVTK(results_files, param_names, 'base_results', x, y, z, block_3d)

@@ -6,8 +6,9 @@ Created on Sat Jan 23 11:22:05 2016
 """
 
 from vtk import vtkRectilinearGrid, vtkDoubleArray, vtkRectilinearGridWriter, vtkStringArray, vtkXMLRectilinearGridWriter
-from pyTETRAD import TetradGrid, TetradGridView
+from pyTETRAD import TetradGrid, TetradGridView, TetradInterSim
 import numpy as np
+import pandas as pd
 
 def ConvertDataTo3D(data_1d, nx, ny, nz):
     data_3d = np.zeros((nx, ny, nz)) 
@@ -76,7 +77,7 @@ def SetVtkGrid(x,y,z):
 #Set up the vtk grid
 grid = SetVtkGrid(x,y,z)
 
-def AddScalarData(grid, param_name, tetrad_data, nx, ny, nz):
+def AddScalarData(grid, param_name, tetrad_data):
     """Add scalar/string data to a vtk grid.
     
     Parameters:
@@ -85,6 +86,8 @@ def AddScalarData(grid, param_name, tetrad_data, nx, ny, nz):
         tetrad_data -- the data extracted from an IS or GV file
         nx, ny, nz -- the number of cells in the x, y and z directions respectively
     """
+    nx, ny, nz = [i-1 for i in grid.GetDimensions()]    
+    
     data_3d = (np.zeros((nx, ny, nz)))
     data_3d = ConvertDataTo3D(tetrad_data, nx, ny, nz)
     if all(isinstance(d,str) for d in tetrad_data):
@@ -97,11 +100,11 @@ def AddScalarData(grid, param_name, tetrad_data, nx, ny, nz):
 
 #insert scalar data
 block_1d = np.array(range(1, grid.GetNumberOfCells()+1))
-AddScalarData(grid, 'Block', block_1d, nx, ny, nz)
+AddScalarData(grid, 'Block', block_1d)
 
 #insert string data
 block_names = ['This is block {}.'.format(str(b)) for b in block_1d]
-AddScalarData(grid, 'Block_Name', block_names, nx, ny, nz)
+AddScalarData(grid, 'Block_Name', block_names)
 
 
 
@@ -158,6 +161,58 @@ def ProcessGridView(gv_filename, csv_filename_base):
     """
     gv = TetradGridView(gv_filename)
     gv.read_all_data(csv_filename_base)
+
+
+def TetradResultsToVtk(grid, results_files, param_names, vtk_filename_base, skip = 1, isfile = None):
+    """Writes the GridView results from the .csv files to the vtkGrid object and writes the vtk files.
+    Also reads InterSim files if available.
     
+    Parameters:
+        grid -- vtk Grid Object
+        results_files -- a list containing the filesnames of the .csv files to read from
+        param_names -- the equivalent parameter names for each of the results_files
+        skip -- time steps to skip, default = 1 (means include everything)
+        isfile -- the intersim file to read, default = None
+    """    
+    nx, ny, nz = [i-1 for i in grid.GetDimensions()]        
+    
+    #insert block number data
+    block_1d = np.array(range(1, grid.GetNumberOfCells()+1))
+    AddScalarData(grid, 'Block', block_1d)
+    
+    df = pd.read_csv(results_files[0])
+    times = df.columns.tolist()[:-1][::skip]
+    
+    #read the InterSim file
+    if isfile:
+        isfo = TetradInterSim(isfile)
+        is_df = isfo.read_data()
+        is_params = is_df.columns.tolist()
+        if 'Sg' in is_params:
+            is_params[is_params.index('Sg')] = 'SG'
+            is_df.columns = is_params
+        for is_param in is_params:
+            data_1d = np.array(is_df[is_param].tolist())
+            AddScalarData(grid, is_param, data_1d)
+            
+#        DoVTKLegacy(x, y, z, data_dict, vtk_file_name + '.vtk.' + is_index, time=time)
+
+    for step, time in enumerate(times):
+        print time
+        for i, results_csv in enumerate(results_files):
+            df = pd.DataFrame()
+            df = pd.read_csv(results_csv)
+            data_1d = np.array(df.loc[:,time])
+            AddScalarData(grid, param_names[i], data_1d)
+            
+        WriteVtkFile(grid, vtk_filename_base + '.vtk.' + str(step), time=time)
+
+results_files = ["base_P.csv", "base_Sg.csv", 'base_T.csv']
+param_names = ['P', 'SG', 'T']
+isfile = 'base.is'
+
 #process GridView
 ProcessGridView('base.gv', 'base')
+
+#write the vtk files from GridView and InterSim
+TetradResultsToVtk(grid, results_files, param_names, 'base', skip=1, isfile=isfile)
