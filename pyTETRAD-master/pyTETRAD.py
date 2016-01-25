@@ -32,10 +32,17 @@ class TetradFile(file):
         line=''
         if isinstance(keyword,list): keywords=keyword
         else: keywords=[keyword]
-        while not any([line[start:].strip()==kw for kw in keywords]):
-            line=self.readline()
-            if line=='': return False
-        return [kw for kw in keywords if line[start:].strip()==kw][0]
+        # Check if the passed object is a GridView or Intersim Object
+        if isinstance(self, TetradGridView) or isinstance(self, TetradInterSim):
+            while not any([line[start:].strip()==kw for kw in keywords]):
+                line=self.readline()
+                if line=='': return False
+            return [kw for kw in keywords if line[start:].strip()==kw][0]
+        else:
+            while not any([line[start:].startswith(kw) for kw in keywords]):
+                line=self.readline()
+                if line=='': return False
+            return [kw for kw in keywords if line[start:].startswith(kw)][0]
 
 class TetradGridView(TetradFile):
     def __init__(self, filename):
@@ -91,7 +98,7 @@ class TetradGridView(TetradFile):
     def read_table(self):
         line = "  "
         values = []
-        while line.startswith("  ") and not line.startswith("         0.0") and not line.startswith("        -1.0"):
+        while (line.startswith("  ") or line.startswith(" -")) and not line.startswith("         0.0") and not line.startswith("        -1.0"):
             line = self.readline()
             values+=(line.strip().split())
         return (np.array(values[:-1]).astype(float))
@@ -238,7 +245,13 @@ class TetradOut(TetradFile):
             while not l.startswith(' ****') and not l.startswith('\n'): #table per well with the totals
                 l=self.readline()
                 if l!='  \n':
-                    well_table.append(l.strip().split())
+#                    well_table.append(l.strip().split())
+                    curr_line = []
+                    curr_line.append(l[0:6])
+                    curr_line.append(l[7:13])
+                    curr_line.append(l[14:20])
+                    curr_line = curr_line + [l[20:][i:i+9] for i in range(0,(len(columns)-3)*9,9)]
+                    well_table.append(curr_line)
             if l=='\n': endtable=True      
             if not endtable:
                 well_table.pop()
