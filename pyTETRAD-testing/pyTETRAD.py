@@ -32,10 +32,17 @@ class TetradFile(file):
         line=''
         if isinstance(keyword,list): keywords=keyword
         else: keywords=[keyword]
-        while not any([line[start:].startswith(kw) for kw in keywords]):
-            line=self.readline()
-            if line=='': return False
-        return [kw for kw in keywords if line[start:].startswith(kw)][0]
+        # Check if the passed object is a GridView or Intersim Object
+        if isinstance(self, TetradGridView) or isinstance(self, TetradInterSim):
+            while not any([line[start:].strip()==kw for kw in keywords]):
+                line=self.readline()
+                if line=='': return False
+            return [kw for kw in keywords if line[start:].strip()==kw][0]
+        else:
+            while not any([line[start:].startswith(kw) for kw in keywords]):
+                line=self.readline()
+                if line=='': return False
+            return [kw for kw in keywords if line[start:].startswith(kw)][0]
 
 class TetradGridView(TetradFile):
     def __init__(self, filename):
