@@ -247,8 +247,8 @@ class TetradOut(TetradFile):
                 if l!='  \n':
 #                    well_table.append(l.strip().split())
                     curr_line = []
-                    curr_line.append(l[0:6])
-                    curr_line.append(l[7:13])
+                    curr_line.append(l[0:6].strip())
+                    curr_line.append(l[7:13].strip())
                     curr_line.append(l[14:20])
                     curr_line = curr_line + [l[20:][i:i+9] for i in range(0,(len(columns)-3)*9,9)]
                     well_table.append(curr_line)
