@@ -22,29 +22,6 @@ def ConvertDataTo3D(data_1d, nx, ny, nz):
                 
     return data_3d
 
-
-# TETRAD Grid
-grid = TetradGrid("base.gv")
-centers, dim = grid.grid_spec()
-
-# Dimensions 
-
-nx, ny, nz = dim['dx'].shape[0], dim['dy'].shape[0], dim['dz'].shape[0] 
-lx, ly, lz = dim['dx'].sum(), dim['dy'].sum(), dim['dz'].sum()
-
-ncells = nx * ny * nz 
-npoints = (nx + 1) * (ny + 1) * (nz + 1) 
-
-# Coordinates 
-x = np.cumsum(dim['dx'])
-x = np.insert(x,0,0)
-y = np.cumsum(dim['dy'])
-y = np.insert(y,0,0)
-z = np.cumsum(dim['dz'])
-z = z*-1
-z = np.insert(z,0,0)
-
-
 def SetVtkGrid(x,y,z):
     """Set up the vtk rectilinear grid using x, y, z data.
     
@@ -74,9 +51,6 @@ def SetVtkGrid(x,y,z):
 
     return grid
 
-#Set up the vtk grid
-grid = SetVtkGrid(x,y,z)
-
 def AddScalarData(grid, param_name, tetrad_data):
     """Add scalar/string data to a vtk grid.
     
@@ -98,57 +72,50 @@ def AddScalarData(grid, param_name, tetrad_data):
     for d in data_3d.flatten('F'): dataArray.InsertNextValue(d)
     grid.GetCellData().AddArray(dataArray)
 
-#insert scalar data
-block_1d = np.array(range(1, grid.GetNumberOfCells()+1))
-AddScalarData(grid, 'Block', block_1d)
-
-#insert string data
-block_names = ['This is block {}.'.format(str(b)) for b in block_1d]
-AddScalarData(grid, 'Block_Name', block_names)
-
-
-
-def WriteVtkFile(grid, filename, time=None):
+def WriteVtkFile(grid, filename, time=None, xml=False):
     """Writes a vtk Grid object to a file.
     
     Parameters:
         grid -- vtk Grid Object
         filename -- the filename for the vtk file
+        xml -- write the vtk in xml format
     """
     
-    #insert time data; this has a bug on the vtk writer, manually insert time field instead.
-    #time = vtkDoubleArray()
-    #time.SetName('Time')
-    #time.InsertNextValue(np.array(1999))
-    #grid.GetFieldData().AddArray(time)
+    if not xml:
+        #write to .vtk file
+        writer = vtkRectilinearGridWriter();
+        writer.SetFileName(filename)
+        writer.SetInputData(grid)
+        writer.Write()
+        
+        if time:
+            #manually add the time data
+            vtk_file = open(filename, 'r+').read().split('\n')
+            line_index = 0
+            line = ''
+            _pos = []
+            while 'CELL_DATA' not in line:
+                line = vtk_file[line_index]
+                line_index += 1
+            vtk_file.insert(line_index-1,'FIELD FieldData 1\nTime 1 1 double\n' + str(time))
+            with open(filename, 'w+') as fo:
+                fo.writelines('\n'.join(vtk_file))
     
-    #write to .vtk file
-    writer = vtkRectilinearGridWriter();
-    writer.SetFileName(filename)
-    writer.SetInputData(grid)
-    writer.Write()
+    else:
+        if time:
+            #insert time data; this has a bug on the vtk legacy writer, manually insert time field instead for vtk legacy files.
+            timeArray = vtkDoubleArray()
+            timeArray.SetName('Time')
+#            print time, type(time)
+            timeArray.InsertNextValue(time)
+            grid.GetFieldData().AddArray(timeArray)
     
-    if time:
-        #manually add the time data
-        vtk_file = open(filename, 'r+').read().split('\n')
-        line_index = 0
-        line = ''
-        _pos = []
-        while 'CELL_DATA' not in line:
-            line = vtk_file[line_index]
-            line_index += 1
-        vtk_file.insert(line_index-1,'FIELD FieldData 1\nTime 1 1 double\n' + str(1999))
-        with open(filename, 'w+') as fo:
-            fo.writelines('\n'.join(vtk_file))
-
-    #write to .vtr file; there is also a bug for VTK 6.2.0, update needed to VTK 6.3.0
-    #writer = vtkXMLRectilinearGridWriter();
-    #writer.SetFileName('Sample Rectilinear.vtr')
-    #writer.SetInputData(grid)
-    #writer.Write()
-
-#write the vtk file
-WriteVtkFile(grid, 'Sample Rectilinear.vtk', time = 1999)
+        writer = vtkXMLRectilinearGridWriter();
+        writer.SetDataModeToAscii()
+        print filename
+        writer.SetFileName(filename)
+        writer.SetInputData(grid)
+        writer.Write()
 
 #process TETRAD GridView Data
 def ProcessGridView(gv_filename, csv_filename_base):
@@ -163,7 +130,7 @@ def ProcessGridView(gv_filename, csv_filename_base):
     gv.read_all_data(csv_filename_base)
 
 
-def TetradResultsToVtk(grid, results_files, param_names, vtk_filename_base, skip = 1, isfile = None):
+def TetradResultsToVtk(grid, results_files, param_names, vtk_filename_base, skip = 1, isfile = None, xml = False):
     """Writes the GridView results from the .csv files to the vtkGrid object and writes the vtk files.
     Also reads InterSim files if available.
     
@@ -182,21 +149,27 @@ def TetradResultsToVtk(grid, results_files, param_names, vtk_filename_base, skip
     
     df = pd.read_csv(results_files[0])
     times = df.columns.tolist()[:-1][::skip]
+    vtk_filenames = []    
     
+    if xml:
+        file_extension = '.vtr'
+    else: file_extension = '.vtk'    
+    
+    offset = 0
     #read the InterSim file
     if isfile:
+        offset = 1
         isfo = TetradInterSim(isfile)
         is_df = isfo.read_data()
         is_params = is_df.columns.tolist()
-        if 'Sg' in is_params:
-            is_params[is_params.index('Sg')] = 'SG'
-            is_df.columns = is_params
+        #Note: For IS files, the parameter names are in 'Sentence case'. GV parameters are 'ALLCAPS'. 
+#        if 'Sg' in is_params:
+#            is_params[is_params.index('Sg')] = 'SG'
+#            is_df.columns = is_params
         for is_param in is_params:
             data_1d = np.array(is_df[is_param].tolist())
             AddScalarData(grid, is_param, data_1d)
             
-#        DoVTKLegacy(x, y, z, data_dict, vtk_file_name + '.vtk.' + is_index, time=time)
-
     for step, time in enumerate(times):
         print time
         for i, results_csv in enumerate(results_files):
@@ -204,15 +177,68 @@ def TetradResultsToVtk(grid, results_files, param_names, vtk_filename_base, skip
             df = pd.read_csv(results_csv)
             data_1d = np.array(df.loc[:,time])
             AddScalarData(grid, param_names[i], data_1d)
+        
+        vtk_filenames += [vtk_filename_base + '_' +str(step+offset) + file_extension]
+        WriteVtkFile(grid, vtk_filenames[-1], time=float(time), xml=xml)
+    
+    if xml:
+        write_pvd_file(vtk_filename_base + '.pvd', times, vtk_filenames)
+        
+def write_pvd_file(pvd_filename, times, files):
+    """Writes a .pvd file relating the .vtr files
+    
+    Parameters:
+        pvd_filename -- name of the .pvd file
+        times -- list of times
+        files -- list of .vtr filenames
+    """ 
+    with open(pvd_filename, 'w+') as fo:
+        print >> fo, '<?xml version="1.0"?>'
+        print >> fo, '<VTKFile type="Collection" version="0.1">'
+        print >> fo, '  <Collection>'
+        for i, time in enumerate(times):
+            print >> fo, '    <DataSet timestep="{0}" file="{1}"/>'.format(time, files[i])
+        print >> fo, '  </Collection>'
+        print >> fo, '</VTKFile>'
             
-        WriteVtkFile(grid, vtk_filename_base + '.vtk.' + str(step), time=time)
 
-results_files = ["base_P.csv", "base_Sg.csv", 'base_T.csv']
-param_names = ['P', 'SG', 'T']
-isfile = 'base.is'
+# TETRAD Grid
+grid = TetradGrid('T2-R22.GV')
+centers, dim = grid.grid_spec()
+
+# Dimensions 
+nx, ny, nz = dim['dx'].shape[0], dim['dy'].shape[0], dim['dz'].shape[0] 
+lx, ly, lz = dim['dx'].sum(), dim['dy'].sum(), dim['dz'].sum()
+
+ncells = nx * ny * nz 
+npoints = (nx + 1) * (ny + 1) * (nz + 1) 
+
+# Coordinates 
+x = np.cumsum(dim['dx'])
+x = np.insert(x,0,0)
+y = np.cumsum(dim['dy'][::-1])
+y = np.insert(y,0,0)
+z = np.cumsum(dim['dz'])
+z = z*-1
+z = np.insert(z,0,0)
+
+#Set up the vtk grid
+grid = SetVtkGrid(x,y,z)
+
+#insert scalar data
+block_1d = np.array(range(1, grid.GetNumberOfCells()+1))
+AddScalarData(grid, 'Block', block_1d)
+
+#insert string data
+block_names = ['This is block {}.'.format(str(b)) for b in block_1d]
+AddScalarData(grid, 'Block_Name', block_names)
+
+results_files = ["T2-R22_results_PFR.csv", "T2-R22_results_SGFR.csv", 'T2-R22_results_TFR.csv']
+param_names = ['PFR', 'SGFR', 'TFR']
+isfile = 'T2-R22A.IS'
 
 #process GridView
-ProcessGridView('base.gv', 'base')
+#ProcessGridView('base.gv', 'base')
 
 #write the vtk files from GridView and InterSim
-TetradResultsToVtk(grid, results_files, param_names, 'base', skip=1, isfile=isfile)
+TetradResultsToVtk(grid, results_files, param_names, 'T2-R22_results', skip=200, isfile=isfile, xml=True)

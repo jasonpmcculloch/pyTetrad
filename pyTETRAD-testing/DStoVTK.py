@@ -9,7 +9,8 @@
 # Copyright:   (c) alcaraz.jyt 2015
 #-------------------------------------------------------------------------------
 
-from vtk import vtkUnstructuredGrid, vtkDoubleArray, vtkUnstructuredGridWriter, vtkStringArray, vtkPoints, vtkCellArray, vtkPolyLine, VTK_POLY_LINE
+from vtk import vtkUnstructuredGrid, vtkDoubleArray, vtkUnstructuredGridWriter, vtkXMLUnstructuredGridWriter, vtkStringArray, \
+    vtkPoints, vtkCellArray, vtkPolyLine, VTK_POLY_LINE
 from numpy import cos, sin, sqrt
 from math import radians
 import pandas as pd
@@ -20,8 +21,8 @@ from collections import Counter
 
 
 def main():
-    welltracks_df = convertDeviationSurvey('DS.xlsx')
-    makeVTKWellsUsingModule('Wells.vtk', welltracks_df)
+    welltracks_df = convertDeviationSurvey('DS_updated.xlsx')
+    makeVTKWellsUsingModule('Wells', welltracks_df, xml = True)
 
 def mainOld():
     global geo, blockmap
@@ -128,7 +129,7 @@ def makeVTKWells(fname, welltracks_df):
         for i in range(numwells):
             print >> fo, '4'
 
-def makeVTKWellsUsingModule(fname, welltracks_df):
+def makeVTKWellsUsingModule(fname_base, welltracks_df, xml=False):
     
     numpoints = welltracks_df.shape[0]
     wells = welltracks_df['Well'].unique().tolist()
@@ -159,10 +160,18 @@ def makeVTKWellsUsingModule(fname, welltracks_df):
     grid.SetCells(VTK_POLY_LINE, cells)
     grid.GetCellData().AddArray(wellname)
     
-    writer = vtkUnstructuredGridWriter()
-    writer.SetFileName('Wells_.vtk')
-    writer.SetInputData(grid)
-    writer.Write()
+    if xml:
+        writer = vtkXMLUnstructuredGridWriter()
+        writer.SetFileName('{}.vtu'.format(fname_base))
+        writer.SetDataModeToAscii()
+        writer.SetInputData(grid)
+        writer.Write()
+        
+    else:
+        writer = vtkUnstructuredGridWriter()
+        writer.SetFileName('{}.vtk'.format(fname_base))
+        writer.SetInputData(grid)
+        writer.Write()
     
 if __name__ == '__main__':
     main()
