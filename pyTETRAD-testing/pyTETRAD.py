@@ -453,7 +453,73 @@ class TetradGrid(TetradFile):
             nodes.append(x+nodes[-1])
         centers = [(nodes[i+1]+nodes[i])/2 for i in xrange(n)]
         return np.array(centers)
-            
 
-          
-            
+class TetradPlotFile(TetradFile):
+    def __init__(self, filename):
+        self.filename = filename
+        super(TetradPlotFile,self).__init__(filename,'r')
+        self.setup_pos()
+    
+    def setup_pos(self):
+        keyword = 'NPLOT'
+        self._params = self.get_params()
+        self._pos, self._times = self.get_times(keyword)
+        
+    def get_params(self):
+        self.seek(0)
+        for line in self:
+            if line.strip().startswith('NAMEW'):
+                headers = line.split()
+                break
+        return headers
+    
+    def get_times(self, keyword):
+        time_pos = []
+        times = []
+        self.seek(0)
+        line = self.readline()
+        while not line == '':
+            if line.strip().startswith(keyword):
+                line = self.readline()
+                line_data = line.split()
+                times.append(float(line_data[1]))
+                self.readline()
+                self.readline()
+                time_pos.append(self.tell())
+            else:
+                line = self.readline()
+        return time_pos, times
+    
+    def read_time(self, time):
+        self.seek(0)
+        dtypes = [float]*1 + [str]*1 + [float]*(len(self._params)-1)
+        if time in self._times:
+            results = pd.DataFrame(columns=['TIME']+self._params)
+            pos = self._pos[self._times.index(time)]
+            self.seek(pos)
+            line = self.readline()
+            while line.strip():
+                results = results.append(pd.DataFrame([[time]+line.split()],columns=results.columns))
+                line = self.readline()
+            for i,col in enumerate(results.columns):
+                results.loc[:,col]=results.loc[:,col].astype(dtypes[i])
+            return results.reset_index(drop=True)
+        else:
+            return None
+    
+    def read_all_times(self):
+        self.seek(0)
+        results = pd.DataFrame(columns=['TIME']+self._params)
+        for time_index, time in enumerate(self._times):
+            results = results.append(self.read_time(time))
+        return results.reset_index(drop=True)
+        
+    def to_excel(self, output_file='plt.xlsx'):
+        results = self.read_all_times()
+        results = results.sort(['NAMEW','TIME'])
+        writer = pd.ExcelWriter(output_file)
+        for well in results.loc[:,'NAMEW']:
+            res = results.loc[results['NAMEW']==well]
+            res = res.reset_index(drop=True)
+            res.to_excel(writer, well, index=False)
+        writer.save()            
