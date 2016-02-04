@@ -20,6 +20,7 @@ class TestPyTetrad(unittest.TestCase):
         self.plt = pickle.load(open('test\\plt.p', 'r'))
         self.grid_gv = pickle.load(open('test\\grid_gv.p', 'r'))
         self.grid_is = pickle.load(open('test\\grid_is.p', 'r'))
+        self.dat = pickle.load(open('test\\dat.p', 'r'))
         
 
     def test_gv(self):
@@ -102,6 +103,17 @@ class TestPyTetrad(unittest.TestCase):
         self_all_times = self.plt.pop('read_all_times')
         self.assertEqual(result, self.plt)
         self.assertTrue(self.assert_df_equal(result_all_times, self_all_times))
+    
+    def test_dat(self):
+        datfile = 'test\\base.dat'
+        dat = TetradInput(datfile)
+        result = {}
+        result['_params'] = dat._params
+        result['_fullpos'] = dat._fullpos
+        result_production_rates = dat.get_production_rates()
+        self_production_rates = self.dat.pop('production_rates')
+        self.assertEqual(result, self.dat)
+        self.assertTrue(self.assert_df_equal(result_production_rates, self_production_rates))
         
     def assert_df_equal(self, df1, df2):
         try:
@@ -131,7 +143,10 @@ def GenerateTestPyTetrad():
     start_time = time.time()
     generate_test_plot('test\\base.plt')
     print("--- %s seconds ---" % (time.time() - start_time))
-
+    
+    start_time = time.time()    
+    generate_test_dat('test\\base.dat')
+    print("--- %s seconds ---" % (time.time() - start_time))
     
 def generate_test_gv(gvfile):
     gv = TetradGridView(gvfile)
@@ -190,6 +205,14 @@ def generate_test_plot(pltfile):
     result['_params'] = plt._params
     result['read_all_times'] = plt.read_all_times()
     pickle.dump(result, open('test\\plt.p', 'wb'))
+    
+def generate_test_dat(datfile):
+    dat = TetradInput(datfile)
+    result = {}
+    result['_params'] = dat._params
+    result['_fullpos'] = dat._fullpos
+    result['production_rates'] = dat.get_production_rates()
+    pickle.dump(result, open('test\\dat.p', 'wb'))
 
 if __name__ == '__main__':
     unittest.main()
