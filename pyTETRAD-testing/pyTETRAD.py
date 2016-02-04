@@ -336,6 +336,13 @@ class TetradGrid(TetradFile):
         """Checks filetype and defines read_table method using getattr and setattr"""
         self.seek(0)
         filetype = self.readline().split()[0]
+        if filetype not in ["INTERSIM", "GRIDVIEW"]:
+            if self.name.split('.')[-1].upper().startswith('IS'):
+                filetype = "INTERSIM"
+            elif self.name.upper().endswith('.GV'):
+                filetype = "GRIDVIEW"
+            else:
+                print "Cannot recognize filetype"
         if filetype == "INTERSIM":
             setattr(self,'read_table',getattr(self, "read_table_intersim"))
         elif filetype == "GRIDVIEW":
