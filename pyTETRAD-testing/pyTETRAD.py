@@ -38,6 +38,11 @@ class TetradFile(file):
                 line=self.readline()
                 if line=='': return False
             return [kw for kw in keywords if line[start:].strip()==kw][0]
+        elif isinstance(self, TetradInput):
+            while not any([line[start:].strip().startswith(kw) for kw in keywords]):
+                line=self.readline()
+                if line=='': return False
+            return [kw for kw in keywords if line[start:].strip().startswith(kw)][0]
         else:
             while not any([line[start:].startswith(kw) for kw in keywords]):
                 line=self.readline()
@@ -73,6 +78,7 @@ class TetradGridView(TetradFile):
         first_parameter = min(self._fullpos, key=self._fullpos.get)
         self._pos = self._fullpos[first_parameter]
         self._params = self._fullpos.keys()
+        self.param_table = None
 
     def find_parameters(self):
         origin = self.tell()
@@ -138,6 +144,19 @@ class TetradGridView(TetradFile):
             df.loc[:,param] = self.read_table()
         self.seek(orig_pos)
         return df
+        
+    def generate_csv(self):
+        grid_df = TetradGrid(self.name).grid_spec()[0]
+        result_df = grid_df.copy()
+        for t in self.times:
+            if not self.param_table:
+                self.read_all_data()
+            for param in self.param_table.keys():
+                print 'DEBUG: Merging data for ', param
+                param_df = self.param_table[param][t]
+                param_df.name = param
+                result_df = pd.concat([result_df, param_df], axis=1)
+            result_df.to_csv('{0:.4f}.csv'.format(t))
 
     def first(self):
         self.index = 0
@@ -530,3 +549,68 @@ class TetradPlotFile(TetradFile):
             res = res.reset_index(drop=True)
             res.to_excel(writer, well, index=False)
         writer.save()            
+
+class TetradInput(TetradFile):
+    def __init__(self, filename):
+        self.filename = filename
+        super(TetradInput,self).__init__(filename,'r')
+        self._fullpos = {}
+        self.setup_pos()
+        
+    def setup_pos(self):
+        self.seek(0)
+        eof = False
+        while not eof:
+            current_pos = self.tell()
+            current_line = self.readline()
+            if not (current_line =='\n') and ("'" in current_line[0:2]) and not (current_line.strip().startswith("'COMMENT'")):
+                current_keyword = current_line.strip().split()[0]
+                if current_keyword in self._fullpos:
+                    self._fullpos[current_keyword].append(current_pos)
+                else:
+                    self._fullpos[current_keyword] = [current_pos]
+            elif not current_line:
+                eof = True
+        self._params = self._fullpos.keys()
+    
+    def find_parameters(self):
+        origin = self.tell()
+        self.seek(0)
+        self.readline()
+        parameters = []
+        endfile=False
+        while not endfile:
+            l = self.readline()
+            if l:
+#                line = l.strip()
+                if not (l[0] == '\n') and ("'" in l[0:2]) and not l.strip().startswith("'COMMENT'"):
+                    parameters.append(l.split()[0])
+            else:
+                endfile=True
+        self.seek(origin)
+        return parameters
+    
+    def get_production_rates(self, export_file=None):
+        results = pd.DataFrame()
+        for itpos, tpos in enumerate(self._fullpos["'TIME'"]):
+            prod_positions = []
+            if not (itpos == len(self._fullpos["'TIME'"])-1):
+                prod_positions = [p for p in self._fullpos["'P'"] 
+                                  if p > self._fullpos["'TIME'"][itpos] 
+                                  and p < self._fullpos["'TIME'"][itpos+1]]
+            self.seek(tpos)
+            t = self.readline().strip()
+            t = float(t.split()[1])
+            for ippos, ppos in enumerate(prod_positions):
+                self.seek(ppos)
+                line = self.readline()
+                w = line.split()[1].strip("'")
+                q = float(line.split()[4].strip(","))
+                results = results.combine_first(pd.DataFrame([[q]], columns=[w], index=[t]))
+        results.index.name = 'TIME'
+        results.columns.name = 'WELL'
+        results.fillna(0)
+        if export_file:
+            results.to_excel(export_file)
+        return results
+    
